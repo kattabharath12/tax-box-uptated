@@ -3,7 +3,6 @@ uvicorn[standard]==0.24.0
 sqlalchemy==2.0.23
 python-multipart==0.0.6
 PyJWT==2.8.0
-cryptography==41.0.7
 passlib[bcrypt]==1.7.4
 python-decouple==3.8
 pydantic[email]==2.5.0

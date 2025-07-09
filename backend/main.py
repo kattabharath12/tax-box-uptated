@@ -7,6 +7,7 @@ from typing import Optional
 import jwt
 from passlib.context import CryptContext
 import uvicorn
+import os
 
 from database import SessionLocal, engine, Base
 from models import User, Document, TaxReturn, Payment
@@ -17,19 +18,23 @@ Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="TaxBox.AI API", version="1.0.0")
 
-# CORS middleware
+# CORS middleware - Updated for production
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=[
+        "http://localhost:3000",
+        "https://your-frontend-domain.com",  # Replace with your actual frontend domain
+        "https://*.railway.app",  # Allow Railway preview deployments
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Security
-SECRET_KEY = "your-secret-key-change-in-production"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+# Security - Using environment variables
+SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-change-in-production")
+ALGORITHM = os.getenv("ALGORITHM", "HS256")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
@@ -41,6 +46,11 @@ def get_db():
         yield db
     finally:
         db.close()
+
+# Health check endpoint for Railway
+@app.get("/")
+def health_check():
+    return {"status": "healthy", "message": "TaxBox.AI API is running"}
 
 # Auth functions
 def verify_password(plain_password, hashed_password):
@@ -120,8 +130,16 @@ def upload_document(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
+    # Create uploads directory if it doesn't exist
+    os.makedirs("uploads", exist_ok=True)
+    
     # In production, save to cloud storage (S3, etc.)
     file_path = f"uploads/{current_user.id}_{file.filename}"
+    
+    # Save file to disk (for now)
+    with open(file_path, "wb") as buffer:
+        content = file.file.read()
+        buffer.write(content)
 
     db_document = Document(
         user_id=current_user.id,
@@ -166,6 +184,8 @@ def create_tax_return(
         income=tax_return.income,
         deductions=deductions,
         withholdings=tax_return.withholdings,
+        marital_status=tax_return.marital_status,
+        state=tax_return.state,
         tax_owed=tax_owed,
         refund_amount=refund_amount,
         amount_owed=amount_owed,
@@ -199,5 +219,7 @@ def create_payment(
     db.refresh(db_payment)
     return db_payment
 
+# Get port from environment variable for Railway
 if __name__ == "__main__":
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
